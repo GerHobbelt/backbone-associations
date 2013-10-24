@@ -771,6 +771,304 @@ $(document).ready(function () {
         emp.get('works_for').get("locations").at(0).set('zip', 94403);
     });
 
+    test("Set closure scope correctly - while setting BB Collection & Model instances directly", 5, function () {
+
+        var Location = Backbone.AssociatedModel.extend({
+            defaults:{
+                name:"",
+                zip:""
+            }
+        });
+
+        var Group = Backbone.AssociatedModel.extend({
+            relations:[
+                {
+                    type:Backbone.One,
+                    key:'meetup',
+                    relatedModel:Location
+                }
+            ],
+            defaults:{
+                meetup:undefined,
+                name:""
+            }
+        });
+
+        var loc1 = new Location({name:"CA", zip:"94404", id:1});
+        var loc2 = new Location({name:"OH", zip:"92201", id:2});
+
+        var cb = function () {
+            ok(true)
+        };
+
+        var g1 = new Group({name:"AO", meetup:loc1});
+        g1.on("change:meetup", cb);
+
+        var g2 = new Group({name:"SO", meetup:loc2});
+        g2.on("change:meetup", cb);
+
+        g1.set('meetup', loc2); //1
+
+        g2.set('meetup.zip', '93303'); //2 : Should fire change for both g1 and g2
+
+        g1.set('meetup', undefined); //1
+        g2.set('meetup.zip', '93304'); //1 : Should fire change for g2 only
+
+
+    });
+
+    test("Fetch collection repeatedly: Issue#47", 3, function () {
+
+        var User = Backbone.AssociatedModel.extend({
+            defaults:{
+                name:"",
+                email:""
+            }
+        });
+
+        var Container = Backbone.AssociatedModel.extend({
+            relations:[
+                {
+                    type:Backbone.Many,
+                    key:'xxx',
+                    relatedModel:User
+                }
+            ],
+            defaults:{
+                'xxx':[],
+                name:""
+            }
+        });
+
+        var ContainerCollection = Backbone.Collection.extend({
+            model:Container,
+            url:"fc",
+            sync:function (resp, model, options) {
+                options.success(
+                    [
+                        {
+                            "id":425,
+                            "name":"I am so cool",
+                            "xxx":[
+                                {
+                                    "id":418,
+                                    "email":"art@garfunkel.com"
+                                }
+                            ]
+                        }
+                    ]
+                );
+            }
+
+        });
+
+        var f = new ContainerCollection();
+        f.on('add:xxx', function () {
+            ok(true)
+        });
+
+        f.fetch();
+        f.at(0).get('xxx').add({name:"n1"}); //Fire add:xxx
+        f.at(0).get('xxx').add({name:"n4"}); //Fire add:xxx
+
+        f.fetch();
+        f.at(0).get('xxx').add({name:"n2"}); //Fire add:xxx
+    });
+
+    test("Polymorphic Associate : Issue#23", 4, function () {
+
+        var Models = {};
+        var findPolyMorphicType = Models.findPolyMorphicType = function (relation, attributes) {
+            var key = relation.key + '_type';
+            return Models[attributes[key] || this.get(key)];
+        };
+
+        Models.Job = Backbone.AssociatedModel.extend({
+            relations:[
+                {
+                    type:Backbone.One,
+                    key:'organizable',
+                    relatedModel:findPolyMorphicType
+                }
+            ]
+
+        });
+
+        Models.Comment = Backbone.AssociatedModel.extend({
+            relations:[
+                {
+                    type:Backbone.One,
+                    key:'commentable',
+                    relatedModel:findPolyMorphicType
+                }
+            ]
+        });
+
+        Models.Company = Backbone.AssociatedModel.extend({
+
+        });
+        Models.Department = Backbone.AssociatedModel.extend({
+
+        });
+
+
+        Models.Article = Backbone.AssociatedModel.extend({
+
+        });
+        Models.StatusUpdate = Backbone.AssociatedModel.extend({
+
+        });
+
+        var cjob = new Models.Job({organizable_type:'Company', name:"J1", organizable:{name:"Google"}});
+        var djob = new Models.Job({organizable_type:'Department', name:"J2", organizable:{name:"Google Reader"}});
+
+        var articleComment = new Models.Comment({
+            commentable_type:'Article',
+            name:"c1",
+            commentable:{body:"Wonderful post!"}
+        });
+        var statusComment = new Models.Comment({
+            commentable_type:'StatusUpdate',
+            name:"c2",
+            commentable:{body:"Why are you updating your status with pointless crap?"}
+        });
+
+        equal(cjob.get('organizable') instanceof Models.Company, true);
+        equal(djob.get('organizable') instanceof Models.Department, true);
+
+        equal(articleComment.get('commentable') instanceof Models.Article, true);
+        equal(statusComment.get('commentable') instanceof Models.StatusUpdate, true);
+
+    });
+
+
+    test("Fetch collection with reset: Issue#45", 5, function () {
+        var Product = Backbone.AssociatedModel.extend({
+            defaults:{
+                name:undefined, // String
+                productId:undefined // String
+            }
+        });
+
+        var Category = Backbone.AssociatedModel.extend();
+        var Brand = Backbone.AssociatedModel.extend();
+        var Vendor = Backbone.AssociatedModel.extend();
+        var Tag = Backbone.AssociatedModel.extend();
+
+        var SearchFacet = Backbone.AssociatedModel.extend({
+            relations:[
+                {
+                    type:Backbone.Many,
+                    key:'categories',
+                    relatedModel:Category
+                },
+                {
+                    type:Backbone.Many,
+                    key:'brands',
+                    relatedModel:Brand
+                },
+                {
+                    type:Backbone.Many,
+                    key:'vendors',
+                    relatedModel:Vendor
+                },
+                {
+                    type:Backbone.Many,
+                    key:'tags',
+                    relatedModel:Tag
+                }
+            ]
+        });
+        var counter = 1;
+        var SearchResult = Backbone.AssociatedModel.extend({
+            relations:[
+                {
+                    type:Backbone.One,
+                    key:'searchFacet',
+                    relatedModel:SearchFacet
+                },
+                {
+                    type:Backbone.Many,
+                    key:'products',
+                    relatedModel:Product
+                }
+            ],
+            sync:function (method, model, options) {
+                return options.success.call(this, {
+                    id:1,
+                    products:[
+                        {
+                            id:counter,
+                            name:'product' + counter,
+                            productId:'productId' + counter++
+                        },
+                        {
+                            id:counter,
+                            name:'product' + counter,
+                            productId:'productId' + counter++
+                        },
+                        {
+                            id:counter,
+                            name:'product' + counter,
+                            productId:'productId' + counter++
+                        },
+                        {
+                            id:counter,
+                            name:'product' + counter,
+                            productId:'productId' + counter++
+                        }
+                    ],
+                    searchFacet:{
+                        id:'sf1',
+                        categories:[
+                            {
+                                name:'category' + counter++
+                            }
+                        ],
+                        brands:[
+                            {
+                                name:'brand' + counter++
+                            }
+                        ],
+                        tags:[
+                            {
+                                name:'tag' + counter++
+                            }
+                        ],
+                        vendors:[
+                            {
+                                name:'vendor' + counter++
+                            }
+                        ]
+                    }
+                });
+            },
+            urlRoot:'/search'
+        });
+
+        var searchResult = new SearchResult();
+        searchResult.on("reset:products", function (e) {
+            ok(false, 'searchResult reset:products should not fired.'); //0
+        });
+        searchResult.on("reset:searchFacet.tags", function (e) {
+            ok(false, 'searchResult reset:searchFacet.tags should not fired.'); //0
+        });
+        searchResult.fetch();
+        equal(searchResult.get('products').length, 4, "searchResult.products.length should be 4."); //1
+        searchResult.fetch();
+        equal(searchResult.get('products').length, 4, "searchResult.products.length should be 4."); //1
+
+        searchResult.off();
+        searchResult.on("reset:products", function (e) {
+            ok(true, 'searchResult reset:products fired.'); //1
+        });
+        searchResult.on("reset:searchFacet.tags", function (e) {
+            ok(true, 'searchResult reset:searchFacet.tags fired.'); //1
+        });
+        searchResult.fetch({reset:true});
+        equal(searchResult.get('products').length, 4, "searchResult.products.length should be 4."); //1
+    });
+
     test("Issue #28", 2, function () {
         var ItemModel = Backbone.AssociatedModel.extend({
             relations:[
@@ -1179,7 +1477,45 @@ $(document).ready(function () {
 
         emp2.get('manager').set({'fname':'newEmp2'});
         equal(emp2.get('fname'), 'newEmp2', "emp's fname should be changed");
-        equal(emp2.get('manager').get('fname'), 'newEmp2', "manager's fname should be canged");
+        equal(emp2.get('manager').get('fname'), 'newEmp2', "manager's fname should be changed");
+
+        var emp3 = new Employee({fname:'emp3', manager:{fname:'emp4'}});
+        equal(emp3.get('manager.fname'), 'emp4', "manager's fname should be emp4");
+    });
+
+    test("Backbone.Self", 9, function () {
+        var User = Backbone.AssociatedModel.extend({
+            relations:[
+                {
+                    key:'friends',
+                    type:Backbone.Many,
+                    relatedModel:Backbone.Self
+                }
+            ],
+            defaults:{
+                username:undefined,
+                fname:'',
+                lname:'',
+                aboutMe:'',
+                friends:[]
+            }
+        });
+
+        var user1 = new User({id:1, username:'user1'});
+        var user2 = new User({id:2, username:'user2', friends:[user1]});
+        var user3 = new User({id:3, username:'user3', friends:[user1, {id:4, username:'user4'}]});
+
+        equal(user1.get('username'), 'user1', "user1's username should be correct");
+        equal(user1.get('friends').length, 0, "count of friends of user1 should be 0");
+
+        equal(user2.get('username'), 'user2', "user2's username should be correct");
+        equal(user2.get('friends').length, 1, "count of friends of user2 should be 1");
+        equal(user2.get('friends[0].username'), 'user1', "username of first follower of user2 should be user1");
+
+        equal(user3.get('username'), 'user3');
+        equal(user3.get('friends').length, 2);
+        equal(user3.get('friends[0].username'), 'user1');
+        equal(user3.get('friends[1].username'), 'user4');
     });
 
     test("Self-Reference `toJSON`", function () {
@@ -1298,7 +1634,7 @@ $(document).ready(function () {
         });
     });
 
-    test("parents", 6, function () {
+    test("parent relations", 7, function () {
         emp.set('works_for', {name:"Marketing", number:29});
 
         var emp2 = new Employee({
@@ -1335,15 +1671,16 @@ $(document).ready(function () {
         equal(emp.parents.length, 0);
         equal(emp2.parents.length, 0);
 
-        console.log(works_for.parents);
-
-        //Could cause mem leaks
+        //Could cause mem leaks if you set emp3 = undefined
         //emp3 = undefined;
         //equal(works_for.parents.length,1);
-        //console.log(works_for.parents);
 
+        emp3.cleanup();
+        emp3 = undefined;
+        equal(works_for.parents.length, 0);
 
     });
+
 
     test("parents - Issue #39", 3, function () {
         var Nested = Backbone.AssociatedModel.extend();
