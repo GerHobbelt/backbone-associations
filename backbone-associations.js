@@ -47,22 +47,29 @@
         VERSION:"0.5.3"
     };
 
-    // Define `SEPERATOR` property to Backbone.Associations
-    Object.defineProperty(Backbone.Associations, 'SEPARATOR', {
-        enumerable: true,
-        get: function(){
-            return pathSeparator;
-        },
-        set: function(value){
-            if (!_.isString(value) || _.size(value) < 1) {
-                value = ".";
-            }
-            // set private properties
-            pathSeparator = value;
-            pathChecker = new RegExp("[\\" + pathSeparator + "\\[\\]]+", "g");
-            delimiters = new RegExp("[^\\" + pathSeparator + "\\[\\]]+", "g");
+    // Define `getter` and `setter` for `separator`
+    var getSeparator = function() {
+        return pathSeparator;
+    };
+    // Define `setSeperator`
+    var setSeparator = function(value) {
+        if (!_.isString(value) || _.size(value) < 1) {
+            value = ".";
         }
-    });
+        // set private properties
+        pathSeparator = value;
+        pathChecker = new RegExp("[\\" + pathSeparator + "\\[\\]]+", "g");
+        delimiters = new RegExp("[^\\" + pathSeparator + "\\[\\]]+", "g");
+    };
+
+    try {
+        // Define `SEPERATOR` property to Backbone.Associations
+        Object.defineProperty(Backbone.Associations, 'SEPARATOR', {
+            enumerable: true,
+            get: getSeparator,
+            set: setSeparator
+        });
+    } catch (e) {}
 
     // Backbone.AssociatedModel
     // --------------
@@ -73,6 +80,9 @@
     Backbone.Associations.Self = Backbone.Self = "Self";
     // Set default separator
     Backbone.Associations.SEPARATOR = ".";
+    Backbone.Associations.getSeparator = getSeparator;
+    Backbone.Associations.setSeparator = setSeparator;
+    setSeparator();
     // Define `AssociatedModel` (Extends Backbone.Model).
     AssociatedModel = Backbone.AssociatedModel = Backbone.Associations.AssociatedModel = BackboneModel.extend({
         // Define relations with Associated Model.
@@ -389,7 +399,7 @@
             var collection, relatedModel = type;
             _.isString(relatedModel) && (relatedModel = map2Scope(relatedModel));
             // Creates new `Backbone.Collection` and defines model class.
-            if (relatedModel && relatedModel.prototype instanceof AssociatedModel) {
+            if (relatedModel && (relatedModel.prototype instanceof AssociatedModel) || _.isFunction(relatedModel)) {
                 collection = new BackboneCollection();
                 collection.model = relatedModel;
             } else {
